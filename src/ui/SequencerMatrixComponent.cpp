@@ -1,10 +1,14 @@
 #include "SequencerMatrixComponent.h"
 #include "PluginProcessor.h"
 #include "EffectSection.h"
+#include "GateLaneComponent.h"
 
 SequencerMatrixComponent::SequencerMatrixComponent (PluginProcessor& proc)
     : processor (proc)
 {
+    gateLane = std::make_unique<GateLaneComponent> (proc.getSequencerState());
+    addAndMakeVisible (gateLane.get());
+
     rebuildSections();
     startTimerHz (30);
 }
@@ -68,6 +72,7 @@ void SequencerMatrixComponent::timerCallback()
         repaint();
     }
 
+    gateLane->refresh();
     for (auto& section : sections)
         section->refreshLanes();
 }
@@ -89,6 +94,7 @@ void SequencerMatrixComponent::paintOverChildren (juce::Graphics& g)
 void SequencerMatrixComponent::resized()
 {
     auto area = getLocalBounds();
+    gateLane->setBounds (area.removeFromTop (28).reduced (0, 1));
 
     int expandedCount = 0;
     for (auto& section : sections)

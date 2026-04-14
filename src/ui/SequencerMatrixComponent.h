@@ -5,6 +5,7 @@
 
 class PluginProcessor;
 class EffectSection;
+class GateLaneComponent;
 
 class SequencerMatrixComponent  : public juce::Component,
                                    public juce::Timer
@@ -21,6 +22,7 @@ public:
 
 private:
     PluginProcessor& processor;
+    std::unique_ptr<GateLaneComponent> gateLane;
     std::vector<std::unique_ptr<EffectSection>> sections;
     float lastPlayheadX { -1.0f };
 

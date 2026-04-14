@@ -7,17 +7,6 @@ SequencerEngine::SequencerEngine()
     smoothedValues.fill (0.0f);
 }
 
-double SequencerEngine::getCurrentStepFraction() const
-{
-    if (state == nullptr || state->getTotalSteps() <= 0 || lastPpq < 0.0)
-        return -1.0;
-
-    const double stepsPerQuarterNote = state->getStepsPerBar() / 4.0;
-    const double currentStepF = lastPpq * stepsPerQuarterNote;
-    const double totalStepsD = static_cast<double> (state->getTotalSteps());
-    return std::fmod (currentStepF, totalStepsD);
-}
-
 void SequencerEngine::prepare (double newSampleRate)
 {
     sampleRate = newSampleRate;
@@ -28,8 +17,44 @@ void SequencerEngine::setPlayheadPPQ (double ppq)
     lastPpq = ppq;
 }
 
+void SequencerEngine::setSwing (float swing01)
+{
+    swing = juce::jlimit (0.0f, 1.0f, swing01);
+}
+
+double SequencerEngine::getCurrentStepFraction() const
+{
+    if (state == nullptr || state->getTotalSteps() <= 0 || lastPpq < 0.0)
+        return -1.0;
+
+    const double stepsPerQuarterNote = state->getStepsPerBar() / 4.0;
+    const double stepDuration = 1.0 / stepsPerQuarterNote;
+
+    double adjustedPpq = lastPpq;
+    if (swing > 0.0f)
+    {
+        double rawStep = lastPpq * stepsPerQuarterNote;
+        int stepIndex = static_cast<int> (std::floor (rawStep));
+        double frac = rawStep - stepIndex;
+
+        if (stepIndex % 2 != 0)
+        {
+            // Odd step delayed by swing
+            double swingDelay = swing * 0.66 * stepDuration;
+            if (frac * stepDuration < swingDelay)
+                adjustedPpq -= swingDelay;
+        }
+    }
+
+    double currentStepF = adjustedPpq * stepsPerQuarterNote;
+    const double totalStepsD = static_cast<double> (state->getTotalSteps());
+    return std::fmod (currentStepF, totalStepsD);
+}
+
 void SequencerEngine::processBlock (int numSamples)
 {
+    stepTriggered = false;
+
     if (state == nullptr)
     {
         updateSmoothing (numSamples);
@@ -44,13 +69,38 @@ void SequencerEngine::processBlock (int numSamples)
     }
 
     const double stepsPerQuarterNote = state->getStepsPerBar() / 4.0;
-    const double currentStepF = lastPpq * stepsPerQuarterNote;
-    const int stepIndex = static_cast<int> (std::floor (currentStepF)) % totalSteps;
+
+    double adjustedPpq = lastPpq;
+    if (swing > 0.0f)
+    {
+        double rawStep = lastPpq * stepsPerQuarterNote;
+        int stepIndex = static_cast<int> (std::floor (rawStep));
+        double frac = rawStep - stepIndex;
+        double stepDuration = 1.0 / stepsPerQuarterNote;
+
+        if (stepIndex % 2 != 0)
+        {
+            double swingDelay = swing * 0.66 * stepDuration;
+            if (frac * stepDuration < swingDelay)
+                adjustedPpq -= swingDelay;
+        }
+    }
+
+    double currentStepF = adjustedPpq * stepsPerQuarterNote;
+    int stepIndex = static_cast<int> (std::floor (currentStepF)) % totalSteps;
+    if (stepIndex < 0) stepIndex += totalSteps;
 
     if (stepIndex != currentStep)
     {
         currentStep = stepIndex;
-        updateTargets (stepIndex);
+        float gate = state->getGateValue (stepIndex);
+        bool allowTrigger = (gate >= 1.0f) || (juce::Random::getSystemRandom().nextFloat() < gate);
+
+        if (allowTrigger)
+        {
+            updateTargets (stepIndex);
+            stepTriggered = true;
+        }
     }
 
     updateSmoothing (numSamples);
@@ -58,23 +108,9 @@ void SequencerEngine::processBlock (int numSamples)
 
 void SequencerEngine::updateTargets (int stepIndex)
 {
-    const int totalSteps = state->getTotalSteps();
-
     for (int lane = 0; lane < ParameterMatrix::NumLanes; ++lane)
     {
         float norm = state->getStepValue (lane, stepIndex);
-
-        if (interpolation == Interpolation::Glide)
-        {
-            int nextStep = (stepIndex + 1) % totalSteps;
-            float nextNorm = state->getStepValue (lane, nextStep);
-            // Fractional progress within current step handled in smoothing? 
-            // For simple glide, we just target the next value and let smoothing interpolate over step duration.
-            // Actually better: target the current value, and smoothing constant determines glide speed.
-            // Let's use current value for hold/glide, but with faster smoothing for glide.
-            (void) nextNorm;
-        }
-
         targetValues[lane] = ParameterMatrix::normalizedToReal (lane, norm);
     }
 }
@@ -94,7 +130,6 @@ void SequencerEngine::updateSmoothing (int numSamples)
             continue;
         }
 
-        // one-pole smoothing per sample
         for (int i = 0; i < numSamples; ++i)
             current += (target - current) * coef;
 

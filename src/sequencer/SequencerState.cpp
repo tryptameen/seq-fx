@@ -23,6 +23,9 @@ void SequencerState::setGrid (int bars, int stepsPerBar)
         for (auto& v : lane)
             v = 0.0f;
     }
+    gateValues.resize (static_cast<size_t> (totalSteps));
+    for (auto& v : gateValues)
+        v = 1.0f;
 }
 
 float SequencerState::getStepValue (int lane, int step) const noexcept
@@ -39,6 +42,23 @@ void SequencerState::setStepValue (int lane, int step, float normalizedValue)
     lanes[static_cast<size_t> (lane)][static_cast<size_t> (step)] = juce::jlimit (0.0f, 1.0f, normalizedValue);
 }
 
+float SequencerState::getGateValue (int step) const noexcept
+{
+    if (step < 0 || step >= totalSteps) return 1.0f;
+    return gateValues[static_cast<size_t> (step)];
+}
+
+void SequencerState::setGateValue (int step, float normalizedValue)
+{
+    if (step < 0 || step >= totalSteps) return;
+    gateValues[static_cast<size_t> (step)] = juce::jlimit (0.0f, 1.0f, normalizedValue);
+}
+
+void SequencerState::clearGateValues()
+{
+    std::fill (gateValues.begin(), gateValues.end(), 1.0f);
+}
+
 void SequencerState::clearLane (int lane)
 {
     if (lane < 0 || lane >= ParameterMatrix::NumLanes) return;
@@ -49,6 +69,7 @@ void SequencerState::clearAll()
 {
     for (int i = 0; i < ParameterMatrix::NumLanes; ++i)
         clearLane (i);
+    clearGateValues();
 }
 
 void SequencerState::setEffectOrder (const std::array<int, ParameterMatrix::NumEffects>& order)
@@ -102,6 +123,7 @@ void SequencerState::writeToMemoryBlock (juce::MemoryBlock& mb) const
     stream.writeInt (totalSteps);
     for (const auto& lane : lanes)
         stream.write (lane.data(), static_cast<size_t> (totalSteps) * sizeof (float));
+    stream.write (gateValues.data(), static_cast<size_t> (totalSteps) * sizeof (float));
 
     stream.write (effectOrder.data(), effectOrder.size() * sizeof (int));
     for (bool b : bypass)
@@ -128,6 +150,11 @@ void SequencerState::readFromMemoryBlock (const juce::MemoryBlock& mb)
 
     for (auto& lane : lanes)
         stream.read (lane.data(), static_cast<size_t> (newTotalSteps) * sizeof (float));
+
+    if (static_cast<size_t> (stream.getNumBytesRemaining()) >= static_cast<size_t> (newTotalSteps * sizeof (float)))
+        stream.read (gateValues.data(), static_cast<size_t> (newTotalSteps) * sizeof (float));
+    else
+        clearGateValues();
 
     if (stream.getNumBytesRemaining() >= static_cast<juce::int64> (effectOrder.size() * sizeof (int)))
         stream.read (effectOrder.data(), effectOrder.size() * sizeof (int));

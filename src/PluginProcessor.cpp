@@ -50,6 +50,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         "interpolation", "Interpolation", juce::StringArray ("Hold", "Glide"), 0));
 
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        "swing", "Swing",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f),
+        0.0f));
+
     return { params.begin(), params.end() };
 }
 
@@ -136,6 +141,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         sequencerEngine.setInterpolation (
             *interpParam > 0.5f ? SequencerEngine::Interpolation::Glide
                                 : SequencerEngine::Interpolation::Hold);
+    }
+
+    auto* swingParam = apvts.getRawParameterValue ("swing");
+    if (swingParam != nullptr)
+    {
+        sequencerEngine.setSwing (*swingParam);
     }
 
     if (auto* ph = getPlayHead())

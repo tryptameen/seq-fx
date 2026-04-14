@@ -22,6 +22,13 @@ ToolbarComponent::ToolbarComponent (PluginProcessor& proc)
     addAndMakeVisible (interpolationButton);
     updateInterpolationButton();
 
+    swingSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    swingSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 40, 20);
+    swingSlider.setRange (0.0, 1.0, 0.01);
+    addAndMakeVisible (swingSlider);
+    swingAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        processor.getAPVTS(), "swing", swingSlider);
+
     randomizeButton.onClick = [this] { onRandomizeClicked(); };
     addAndMakeVisible (randomizeButton);
 
@@ -41,11 +48,12 @@ void ToolbarComponent::paint (juce::Graphics& g)
 void ToolbarComponent::resized()
 {
     auto area = getLocalBounds().reduced (8);
-    barsSlider.setBounds (area.removeFromLeft (180));
-    stepsBox.setBounds (area.removeFromLeft (120).reduced (4));
-    interpolationButton.setBounds (area.removeFromLeft (80).reduced (4));
-    clearButton.setBounds (area.removeFromRight (80).reduced (4));
-    randomizeButton.setBounds (area.removeFromRight (100).reduced (4));
+    barsSlider.setBounds (area.removeFromLeft (160));
+    stepsBox.setBounds (area.removeFromLeft (110).reduced (4));
+    interpolationButton.setBounds (area.removeFromLeft (70).reduced (4));
+    swingSlider.setBounds (area.removeFromLeft (130));
+    clearButton.setBounds (area.removeFromRight (70).reduced (4));
+    randomizeButton.setBounds (area.removeFromRight (90).reduced (4));
 }
 
 void ToolbarComponent::onInterpolationClicked()
@@ -71,6 +79,8 @@ void ToolbarComponent::onRandomizeClicked()
     for (int lane = 0; lane < ParameterMatrix::NumLanes; ++lane)
         for (int s = 0; s < seqState.getTotalSteps(); ++s)
             seqState.setStepValue (lane, s, rng.nextFloat());
+    for (int s = 0; s < seqState.getTotalSteps(); ++s)
+        seqState.setGateValue (s, rng.nextFloat());
     repaint();
 }
 

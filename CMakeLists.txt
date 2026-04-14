@@ -45,6 +45,7 @@ target_sources(SeqFX
         src/ui/LaneComponent.cpp
         src/ui/EffectControls.cpp
         src/ui/ToolbarComponent.cpp
+        src/ui/GateLaneComponent.cpp
 )
 
 target_include_directories(SeqFX

@@ -17,6 +17,10 @@ public:
     float getStepValue (int lane, int step) const noexcept;
     void setStepValue (int lane, int step, float normalizedValue);
 
+    float getGateValue (int step) const noexcept;
+    void setGateValue (int step, float normalizedValue);
+    void clearGateValues();
+
     void clearLane (int lane);
     void clearAll();
 
@@ -41,6 +45,7 @@ private:
     int stepsPerBar { 16 };
     int totalSteps { 16 };
     std::array<std::vector<float>, ParameterMatrix::NumLanes> lanes;
+    std::vector<float> gateValues;
 
     std::array<int, ParameterMatrix::NumEffects> effectOrder;
     std::array<bool, ParameterMatrix::NumEffects> bypass;
