@@ -4,20 +4,25 @@
 #include <vector>
 
 class PluginProcessor;
-class LaneComponent;
+class EffectSection;
 
-class SequencerMatrixComponent  : public juce::Component
+class SequencerMatrixComponent  : public juce::Component,
+                                   public juce::Timer
 {
 public:
     SequencerMatrixComponent (PluginProcessor& proc);
     ~SequencerMatrixComponent() override;
 
     void paint (juce::Graphics& g) override;
+    void paintOverChildren (juce::Graphics& g) override;
     void resized() override;
+
+    void timerCallback() override;
 
 private:
     PluginProcessor& processor;
-    std::vector<std::unique_ptr<LaneComponent>> lanes;
+    std::vector<std::unique_ptr<EffectSection>> sections;
+    float lastPlayheadX { -1.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SequencerMatrixComponent)
 };

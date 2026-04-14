@@ -62,6 +62,8 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     filterEngine.prepare (spec);
     delayEngine.prepare (sampleRate, samplesPerBlock);
     reverbEngine.prepare (spec);
+    distortionEngine.prepare (spec);
+    chorusEngine.prepare (spec);
     sequencerEngine.prepare (sampleRate);
 
     // Initialize grid from parameters
@@ -154,9 +156,19 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     reverbEngine.setDamping (sequencerEngine.getSmoothedValue (ParameterMatrix::ReverbDamping));
     reverbEngine.setMix (sequencerEngine.getSmoothedValue (ParameterMatrix::ReverbMix));
 
+    distortionEngine.setDrive (sequencerEngine.getSmoothedValue (ParameterMatrix::DistortionDrive));
+    distortionEngine.setTone (sequencerEngine.getSmoothedValue (ParameterMatrix::DistortionTone));
+    distortionEngine.setMix (sequencerEngine.getSmoothedValue (ParameterMatrix::DistortionMix));
+
+    chorusEngine.setRate (sequencerEngine.getSmoothedValue (ParameterMatrix::ChorusRate));
+    chorusEngine.setDepth (sequencerEngine.getSmoothedValue (ParameterMatrix::ChorusDepth));
+    chorusEngine.setMix (sequencerEngine.getSmoothedValue (ParameterMatrix::ChorusMix));
+
     filterEngine.process (buffer);
     delayEngine.process (buffer);
     reverbEngine.process (buffer);
+    distortionEngine.process (buffer);
+    chorusEngine.process (buffer);
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()

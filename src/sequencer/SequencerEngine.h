@@ -23,6 +23,9 @@ public:
 
     float getSmoothedValue (int lane) const noexcept { return smoothedValues[static_cast<size_t> (lane)]; }
 
+    double getCurrentStepFraction() const;
+    int getCurrentStep() const noexcept { return currentStep; }
+
 private:
     const SequencerState* state { nullptr };
     Interpolation interpolation { Interpolation::Hold };

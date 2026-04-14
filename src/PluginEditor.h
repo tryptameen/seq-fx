@@ -4,6 +4,7 @@
 class PluginProcessor;
 class SequencerMatrixComponent;
 class EffectControls;
+class ToolbarComponent;
 
 class PluginEditor  : public juce::AudioProcessorEditor
 {
@@ -16,6 +17,7 @@ public:
 
 private:
     PluginProcessor& processorRef;
+    std::unique_ptr<ToolbarComponent> toolbar;
     std::unique_ptr<SequencerMatrixComponent> matrix;
     std::unique_ptr<EffectControls> controls;
 

@@ -5,7 +5,9 @@
 
 namespace ParameterMatrix
 {
-    inline constexpr int NumLanes = 9;
+    inline constexpr int LanesPerEffect = 3;
+    inline constexpr int NumEffects = 5;
+    inline constexpr int NumLanes = NumEffects * LanesPerEffect;
 
     enum LaneIndex
     {
@@ -17,7 +19,22 @@ namespace ParameterMatrix
         DelayMix,
         ReverbSize,
         ReverbDamping,
-        ReverbMix
+        ReverbMix,
+        DistortionDrive,
+        DistortionTone,
+        DistortionMix,
+        ChorusRate,
+        ChorusDepth,
+        ChorusMix
+    };
+
+    enum EffectIndex
+    {
+        FilterEffect = 0,
+        DelayEffect,
+        ReverbEffect,
+        DistortionEffect,
+        ChorusEffect
     };
 
     struct LaneInfo
@@ -28,19 +45,30 @@ namespace ParameterMatrix
         float maxValue;
         float defaultValue;
         bool isLogarithmic;
+        int effectIndex;
     };
 
     inline const std::array<LaneInfo, NumLanes> Lanes = {{
-        { "Filter Cutoff",   "filterCutoff",    20.0f,   20000.0f, 1000.0f, true  },
-        { "Filter Resonance","filterResonance", 0.0f,    10.0f,    0.707f,  false },
-        { "Filter Mix",      "filterMix",       0.0f,    1.0f,     0.0f,    false },
-        { "Delay Time",      "delayTime",       1.0f,    3000.0f,  250.0f,  false },
-        { "Delay Feedback",  "delayFeedback",   0.0f,    0.95f,    0.3f,    false },
-        { "Delay Mix",       "delayMix",        0.0f,    1.0f,     0.35f,   false },
-        { "Reverb Size",     "reverbSize",      0.0f,    1.0f,     0.5f,    false },
-        { "Reverb Damping",  "reverbDamping",   0.0f,    1.0f,     0.5f,    false },
-        { "Reverb Mix",      "reverbMix",       0.0f,    1.0f,     0.3f,    false }
+        { "Filter Cutoff",    "filterCutoff",     20.0f,    20000.0f, 1000.0f, true,  FilterEffect },
+        { "Filter Resonance", "filterResonance",  0.001f,   10.0f,    0.707f,  false, FilterEffect },
+        { "Filter Mix",       "filterMix",        0.0f,     1.0f,     0.0f,    false, FilterEffect },
+        { "Delay Time",       "delayTime",        1.0f,     3000.0f,  250.0f,  false, DelayEffect },
+        { "Delay Feedback",   "delayFeedback",    0.0f,     0.95f,    0.3f,    false, DelayEffect },
+        { "Delay Mix",        "delayMix",         0.0f,     1.0f,     0.35f,   false, DelayEffect },
+        { "Reverb Size",      "reverbSize",       0.0f,     1.0f,     0.5f,    false, ReverbEffect },
+        { "Reverb Damping",   "reverbDamping",    0.0f,     1.0f,     0.5f,    false, ReverbEffect },
+        { "Reverb Mix",       "reverbMix",        0.0f,     1.0f,     0.3f,    false, ReverbEffect },
+        { "Distortion Drive", "distortionDrive",  0.0f,     1.0f,     0.0f,    false, DistortionEffect },
+        { "Distortion Tone",  "distortionTone",   200.0f,   8000.0f,  2000.0f, true,  DistortionEffect },
+        { "Distortion Mix",   "distortionMix",    0.0f,     1.0f,     0.0f,    false, DistortionEffect },
+        { "Chorus Rate",      "chorusRate",       0.01f,    20.0f,    0.5f,    false, ChorusEffect },
+        { "Chorus Depth",     "chorusDepth",      0.0f,     1.0f,     0.3f,    false, ChorusEffect },
+        { "Chorus Mix",       "chorusMix",        0.0f,     1.0f,     0.0f,    false, ChorusEffect }
     }};
+
+    inline const char* EffectNames[NumEffects] = {
+        "Filter", "Delay", "Reverb", "Distortion", "Chorus"
+    };
 
     inline float normalizedToReal (int lane, float norm)
     {

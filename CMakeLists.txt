@@ -35,11 +35,15 @@ target_sources(SeqFX
         src/dsp/FilterEngine.cpp
         src/dsp/DelayEngine.cpp
         src/dsp/ReverbEngine.cpp
+        src/dsp/DistortionEngine.cpp
+        src/dsp/ChorusEngine.cpp
         src/sequencer/SequencerState.cpp
         src/sequencer/SequencerEngine.cpp
         src/ui/SequencerMatrixComponent.cpp
+        src/ui/EffectSection.cpp
         src/ui/LaneComponent.cpp
         src/ui/EffectControls.cpp
+        src/ui/ToolbarComponent.cpp
 )
 
 target_include_directories(SeqFX

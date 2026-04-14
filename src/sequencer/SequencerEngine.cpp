@@ -7,6 +7,17 @@ SequencerEngine::SequencerEngine()
     smoothedValues.fill (0.0f);
 }
 
+double SequencerEngine::getCurrentStepFraction() const
+{
+    if (state == nullptr || state->getTotalSteps() <= 0 || lastPpq < 0.0)
+        return -1.0;
+
+    const double stepsPerQuarterNote = state->getStepsPerBar() / 4.0;
+    const double currentStepF = lastPpq * stepsPerQuarterNote;
+    const double totalStepsD = static_cast<double> (state->getTotalSteps());
+    return std::fmod (currentStepF, totalStepsD);
+}
+
 void SequencerEngine::prepare (double newSampleRate)
 {
     sampleRate = newSampleRate;

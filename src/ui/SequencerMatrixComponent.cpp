@@ -1,29 +1,86 @@
 #include "SequencerMatrixComponent.h"
 #include "PluginProcessor.h"
-#include "LaneComponent.h"
+#include "EffectSection.h"
 
 SequencerMatrixComponent::SequencerMatrixComponent (PluginProcessor& proc)
     : processor (proc)
 {
-    for (int i = 0; i < ParameterMatrix::NumLanes; ++i)
+    for (int i = 0; i < ParameterMatrix::NumEffects; ++i)
     {
-        auto lane = std::make_unique<LaneComponent> (i, processor.getSequencerState());
-        addAndMakeVisible (lane.get());
-        lanes.push_back (std::move (lane));
+        auto section = std::make_unique<EffectSection> (i, proc);
+        addAndMakeVisible (section.get());
+        sections.push_back (std::move (section));
     }
+    startTimerHz (30);
 }
 
-SequencerMatrixComponent::~SequencerMatrixComponent() = default;
+SequencerMatrixComponent::~SequencerMatrixComponent()
+{
+    stopTimer();
+}
+
+void SequencerMatrixComponent::timerCallback()
+{
+    float newX = -1.0f;
+    auto& engine = processor.getSequencerEngine();
+    double stepFrac = engine.getCurrentStepFraction();
+    int totalSteps = processor.getSequencerState().getTotalSteps();
+
+    if (stepFrac >= 0.0 && totalSteps > 0)
+        newX = static_cast<float> (stepFrac / static_cast<double> (totalSteps) * getWidth());
+
+    if (! juce::approximatelyEqual (newX, lastPlayheadX))
+    {
+        lastPlayheadX = newX;
+        repaint();
+    }
+
+    for (auto& section : sections)
+        section->refreshLanes();
+}
 
 void SequencerMatrixComponent::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour (0xFF151515));
 }
 
+void SequencerMatrixComponent::paintOverChildren (juce::Graphics& g)
+{
+    if (lastPlayheadX >= 0.0f)
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.8f));
+        g.drawVerticalLine (static_cast<int> (lastPlayheadX), 0.0f, static_cast<float> (getHeight()));
+    }
+}
+
 void SequencerMatrixComponent::resized()
 {
     auto area = getLocalBounds();
-    const int laneHeight = area.getHeight() / ParameterMatrix::NumLanes;
-    for (size_t i = 0; i < lanes.size(); ++i)
-        lanes[i]->setBounds (area.removeFromTop (laneHeight).reduced (0, 1));
+
+    int expandedCount = 0;
+    for (auto& section : sections)
+        if (section->isExpanded())
+            ++expandedCount;
+
+    int headerHeight = 24;
+    int fixedHeight = ParameterMatrix::NumEffects * headerHeight;
+    int variableHeight = area.getHeight() - fixedHeight;
+
+    if (expandedCount > 0 && variableHeight > 0)
+    {
+        for (auto& section : sections)
+        {
+            int h = headerHeight;
+            if (section->isExpanded())
+                h += (variableHeight * ParameterMatrix::LanesPerEffect) / (expandedCount * ParameterMatrix::LanesPerEffect);
+
+            section->setBounds (area.removeFromTop (h).reduced (0, 1));
+        }
+    }
+    else
+    {
+        int h = area.getHeight() / ParameterMatrix::NumEffects;
+        for (auto& section : sections)
+            section->setBounds (area.removeFromTop (h).reduced (0, 1));
+    }
 }

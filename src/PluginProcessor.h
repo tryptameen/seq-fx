@@ -3,6 +3,8 @@
 #include "dsp/FilterEngine.h"
 #include "dsp/DelayEngine.h"
 #include "dsp/ReverbEngine.h"
+#include "dsp/DistortionEngine.h"
+#include "dsp/ChorusEngine.h"
 #include "sequencer/SequencerEngine.h"
 #include "sequencer/SequencerState.h"
 
@@ -39,6 +41,7 @@ public:
 
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     SequencerState& getSequencerState() { return sequencerState; }
+    SequencerEngine& getSequencerEngine() { return sequencerEngine; }
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -48,6 +51,8 @@ private:
     FilterEngine filterEngine;
     DelayEngine delayEngine;
     ReverbEngine reverbEngine;
+    DistortionEngine distortionEngine;
+    ChorusEngine chorusEngine;
 
     SequencerState sequencerState;
     SequencerEngine sequencerEngine;
