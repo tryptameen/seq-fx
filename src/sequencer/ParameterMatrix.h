@@ -6,7 +6,7 @@
 namespace ParameterMatrix
 {
     inline constexpr int LanesPerEffect = 3;
-    inline constexpr int NumEffects = 5;
+    inline constexpr int NumEffects = 6;
     inline constexpr int NumLanes = NumEffects * LanesPerEffect;
 
     enum LaneIndex
@@ -25,7 +25,10 @@ namespace ParameterMatrix
         DistortionMix,
         ChorusRate,
         ChorusDepth,
-        ChorusMix
+        ChorusMix,
+        CompressorThreshold,
+        CompressorRatio,
+        CompressorMix
     };
 
     enum EffectIndex
@@ -34,7 +37,8 @@ namespace ParameterMatrix
         DelayEffect,
         ReverbEffect,
         DistortionEffect,
-        ChorusEffect
+        ChorusEffect,
+        CompressorEffect
     };
 
     struct LaneInfo
@@ -63,11 +67,14 @@ namespace ParameterMatrix
         { "Distortion Mix",   "distortionMix",    0.0f,     1.0f,     0.0f,    false, DistortionEffect },
         { "Chorus Rate",      "chorusRate",       0.01f,    20.0f,    0.5f,    false, ChorusEffect },
         { "Chorus Depth",     "chorusDepth",      0.0f,     1.0f,     0.3f,    false, ChorusEffect },
-        { "Chorus Mix",       "chorusMix",        0.0f,     1.0f,     0.0f,    false, ChorusEffect }
+        { "Chorus Mix",       "chorusMix",        0.0f,     1.0f,     0.0f,    false, ChorusEffect },
+        { "Compressor Thrsh", "compThreshold",   -60.0f,    0.0f,    -20.0f,   false, CompressorEffect },
+        { "Compressor Ratio", "compRatio",        1.0f,     20.0f,    4.0f,    false, CompressorEffect },
+        { "Compressor Mix",   "compMix",          0.0f,     1.0f,     0.0f,    false, CompressorEffect }
     }};
 
     inline const char* EffectNames[NumEffects] = {
-        "Filter", "Delay", "Reverb", "Distortion", "Chorus"
+        "Filter", "Delay", "Reverb", "Distortion", "Chorus", "Compressor"
     };
 
     inline float normalizedToReal (int lane, float norm)

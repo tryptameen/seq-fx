@@ -3,13 +3,19 @@
 SequencerState::SequencerState()
 {
     setGrid (1, 16);
+    for (int i = 0; i < ParameterMatrix::NumEffects; ++i)
+    {
+        effectOrder[static_cast<size_t> (i)] = i;
+        bypass[static_cast<size_t> (i)] = false;
+        solo[static_cast<size_t> (i)] = false;
+    }
 }
 
 void SequencerState::setGrid (int bars, int stepsPerBar)
 {
     numBars = juce::jlimit (1, 32, bars);
-    stepsPerBar = (stepsPerBar == 4 || stepsPerBar == 8 || stepsPerBar == 16) ? stepsPerBar : 16;
-    totalSteps = numBars * stepsPerBar;
+    this->stepsPerBar = (stepsPerBar == 4 || stepsPerBar == 8 || stepsPerBar == 16) ? stepsPerBar : 16;
+    totalSteps = numBars * this->stepsPerBar;
 
     for (auto& lane : lanes)
     {
@@ -45,6 +51,49 @@ void SequencerState::clearAll()
         clearLane (i);
 }
 
+void SequencerState::setEffectOrder (const std::array<int, ParameterMatrix::NumEffects>& order)
+{
+    effectOrder = order;
+}
+
+void SequencerState::swapEffects (int posA, int posB)
+{
+    if (posA < 0 || posA >= ParameterMatrix::NumEffects) return;
+    if (posB < 0 || posB >= ParameterMatrix::NumEffects) return;
+    std::swap (effectOrder[static_cast<size_t> (posA)], effectOrder[static_cast<size_t> (posB)]);
+}
+
+bool SequencerState::isBypassed (int effect) const noexcept
+{
+    if (effect < 0 || effect >= ParameterMatrix::NumEffects) return false;
+    return bypass[static_cast<size_t> (effect)];
+}
+
+void SequencerState::setBypassed (int effect, bool bypassed)
+{
+    if (effect < 0 || effect >= ParameterMatrix::NumEffects) return;
+    bypass[static_cast<size_t> (effect)] = bypassed;
+}
+
+bool SequencerState::isSoloed (int effect) const noexcept
+{
+    if (effect < 0 || effect >= ParameterMatrix::NumEffects) return false;
+    return solo[static_cast<size_t> (effect)];
+}
+
+void SequencerState::setSoloed (int effect, bool soloed)
+{
+    if (effect < 0 || effect >= ParameterMatrix::NumEffects) return;
+    solo[static_cast<size_t> (effect)] = soloed;
+}
+
+bool SequencerState::anySoloActive() const noexcept
+{
+    for (bool s : solo)
+        if (s) return true;
+    return false;
+}
+
 void SequencerState::writeToMemoryBlock (juce::MemoryBlock& mb) const
 {
     juce::MemoryOutputStream stream (mb, false);
@@ -52,9 +101,13 @@ void SequencerState::writeToMemoryBlock (juce::MemoryBlock& mb) const
     stream.writeInt (stepsPerBar);
     stream.writeInt (totalSteps);
     for (const auto& lane : lanes)
-    {
         stream.write (lane.data(), static_cast<size_t> (totalSteps) * sizeof (float));
-    }
+
+    stream.write (effectOrder.data(), effectOrder.size() * sizeof (int));
+    for (bool b : bypass)
+        stream.writeByte (b ? 1 : 0);
+    for (bool s : solo)
+        stream.writeByte (s ? 1 : 0);
 }
 
 void SequencerState::readFromMemoryBlock (const juce::MemoryBlock& mb)
@@ -74,7 +127,16 @@ void SequencerState::readFromMemoryBlock (const juce::MemoryBlock& mb)
         return;
 
     for (auto& lane : lanes)
-    {
         stream.read (lane.data(), static_cast<size_t> (newTotalSteps) * sizeof (float));
-    }
+
+    if (stream.getNumBytesRemaining() >= static_cast<juce::int64> (effectOrder.size() * sizeof (int)))
+        stream.read (effectOrder.data(), effectOrder.size() * sizeof (int));
+
+    for (bool& b : bypass)
+        if (stream.getNumBytesRemaining() > 0)
+            b = stream.readByte() != 0;
+
+    for (bool& s : solo)
+        if (stream.getNumBytesRemaining() > 0)
+            s = stream.readByte() != 0;
 }

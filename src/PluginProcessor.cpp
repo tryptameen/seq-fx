@@ -5,9 +5,10 @@ PluginProcessor::PluginProcessor()
     : AudioProcessor (BusesProperties()
                       #if ! JucePlugin_IsMidiEffect
                        #if ! JucePlugin_IsSynth
-                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                        .withInput  ("Input",      juce::AudioChannelSet::stereo(), true)
+                        .withInput  ("Sidechain",  juce::AudioChannelSet::stereo(), true)
                        #endif
-                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                        .withOutput ("Output",     juce::AudioChannelSet::stereo(), true)
                       #endif
                      ),
       apvts (*this, nullptr, "Parameters", createParameterLayout())
@@ -64,19 +65,19 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     reverbEngine.prepare (spec);
     distortionEngine.prepare (spec);
     chorusEngine.prepare (spec);
+    compressorEngine.prepare (sampleRate, samplesPerBlock);
     sequencerEngine.prepare (sampleRate);
 
-    // Initialize grid from parameters
     auto* barsParam = apvts.getRawParameterValue ("bars");
     auto* spbParam = apvts.getRawParameterValue ("stepsPerBar");
     if (barsParam != nullptr && spbParam != nullptr)
     {
         int bars = static_cast<int> (*barsParam);
-        int spb = 4 << static_cast<int> (*spbParam); // 0->4, 1->8, 2->16
+        int spb = 4 << static_cast<int> (*spbParam);
         sequencerState.setGrid (bars, spb);
         for (int lane = 0; lane < ParameterMatrix::NumLanes; ++lane)
             for (int s = 0; s < sequencerState.getTotalSteps(); ++s)
-                sequencerState.setStepValue (lane, s, 0.5f);
+                sequencerState.setStepValue (lane, s, 0.0f);
     }
 }
 
@@ -86,23 +87,32 @@ void PluginProcessor::releaseResources()
 
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+    auto mainOut = layouts.getMainOutputChannelSet();
+    if (mainOut != juce::AudioChannelSet::mono() && mainOut != juce::AudioChannelSet::stereo())
         return false;
 
+    auto mainIn = layouts.getMainInputChannelSet();
    #if ! JucePlugin_IsSynth
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
+    if (mainIn.isDisabled() || mainOut != mainIn)
         return false;
    #endif
 
-    return true;
+    auto sidechainIn = layouts.getChannelSet (true, 1);
+    if (sidechainIn.isDisabled())
+        return true;
+
+    return (sidechainIn == juce::AudioChannelSet::mono() || sidechainIn == juce::AudioChannelSet::stereo());
 }
 
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
 
-    // Update grid if parameters changed
+    auto output = getBusBuffer (buffer, false, 0);
+    auto sidechainBuffer = getBusBuffer (buffer, true, 1);
+    bool hasSidechain = getBus (true, 1) != nullptr && getBus (true, 1)->isEnabled()
+                        && sidechainBuffer.getNumChannels() > 0;
+
     auto* barsParam = apvts.getRawParameterValue ("bars");
     auto* spbParam = apvts.getRawParameterValue ("stepsPerBar");
     if (barsParam != nullptr && spbParam != nullptr)
@@ -114,10 +124,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         {
             int oldSteps = sequencerState.getTotalSteps();
             sequencerState.setGrid (bars, spb);
-            // Fill new steps with 0.5f
             for (int lane = 0; lane < ParameterMatrix::NumLanes; ++lane)
                 for (int s = oldSteps; s < sequencerState.getTotalSteps(); ++s)
-                    sequencerState.setStepValue (lane, s, 0.5f);
+                    sequencerState.setStepValue (lane, s, 0.0f);
         }
     }
 
@@ -129,7 +138,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                                 : SequencerEngine::Interpolation::Hold);
     }
 
-    // Sync playhead
     if (auto* ph = getPlayHead())
     {
         auto pos = ph->getPosition();
@@ -141,9 +149,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         sequencerEngine.setPlayheadPPQ (-1.0);
     }
 
-    sequencerEngine.processBlock (buffer.getNumSamples());
+    sequencerEngine.processBlock (output.getNumSamples());
 
-    // Update DSP parameters from sequencer
     filterEngine.setCutoff (sequencerEngine.getSmoothedValue (ParameterMatrix::FilterCutoff));
     filterEngine.setResonance (sequencerEngine.getSmoothedValue (ParameterMatrix::FilterResonance));
     filterEngine.setMix (sequencerEngine.getSmoothedValue (ParameterMatrix::FilterMix));
@@ -164,11 +171,39 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     chorusEngine.setDepth (sequencerEngine.getSmoothedValue (ParameterMatrix::ChorusDepth));
     chorusEngine.setMix (sequencerEngine.getSmoothedValue (ParameterMatrix::ChorusMix));
 
-    filterEngine.process (buffer);
-    delayEngine.process (buffer);
-    reverbEngine.process (buffer);
-    distortionEngine.process (buffer);
-    chorusEngine.process (buffer);
+    compressorEngine.setThreshold (sequencerEngine.getSmoothedValue (ParameterMatrix::CompressorThreshold));
+    compressorEngine.setRatio (sequencerEngine.getSmoothedValue (ParameterMatrix::CompressorRatio));
+    compressorEngine.setMix (sequencerEngine.getSmoothedValue (ParameterMatrix::CompressorMix));
+
+    bool anySolo = sequencerState.anySoloActive();
+    const auto& order = sequencerState.getEffectOrder();
+
+    for (int pos = 0; pos < ParameterMatrix::NumEffects; ++pos)
+    {
+        int effect = order[static_cast<size_t> (pos)];
+        if (sequencerState.isBypassed (effect))
+            continue;
+        if (anySolo && ! sequencerState.isSoloed (effect))
+            continue;
+
+        processEffect (effect, output,
+                       hasSidechain ? sidechainBuffer : output);
+    }
+}
+
+void PluginProcessor::processEffect (int effectIndex, juce::AudioBuffer<float>& buffer,
+                                     const juce::AudioBuffer<float>& sidechainBuffer)
+{
+    switch (effectIndex)
+    {
+        case ParameterMatrix::FilterEffect:      filterEngine.process (buffer); break;
+        case ParameterMatrix::DelayEffect:       delayEngine.process (buffer); break;
+        case ParameterMatrix::ReverbEffect:      reverbEngine.process (buffer); break;
+        case ParameterMatrix::DistortionEffect:  distortionEngine.process (buffer); break;
+        case ParameterMatrix::ChorusEffect:      chorusEngine.process (buffer); break;
+        case ParameterMatrix::CompressorEffect:  compressorEngine.process (buffer, sidechainBuffer); break;
+        default: break;
+    }
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()

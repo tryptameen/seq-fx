@@ -24,5 +24,9 @@ private:
     std::vector<std::unique_ptr<EffectSection>> sections;
     float lastPlayheadX { -1.0f };
 
+    void rebuildSections();
+    void moveEffectUp (int posInOrder);
+    void moveEffectDown (int posInOrder);
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SequencerMatrixComponent)
 };

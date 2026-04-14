@@ -5,18 +5,51 @@
 SequencerMatrixComponent::SequencerMatrixComponent (PluginProcessor& proc)
     : processor (proc)
 {
-    for (int i = 0; i < ParameterMatrix::NumEffects; ++i)
-    {
-        auto section = std::make_unique<EffectSection> (i, proc);
-        addAndMakeVisible (section.get());
-        sections.push_back (std::move (section));
-    }
+    rebuildSections();
     startTimerHz (30);
 }
 
 SequencerMatrixComponent::~SequencerMatrixComponent()
 {
     stopTimer();
+}
+
+void SequencerMatrixComponent::rebuildSections()
+{
+    sections.clear();
+    const auto& order = processor.getSequencerState().getEffectOrder();
+
+    for (int pos = 0; pos < ParameterMatrix::NumEffects; ++pos)
+    {
+        int effect = order[static_cast<size_t> (pos)];
+        auto section = std::make_unique<EffectSection> (effect, processor);
+
+        if (pos > 0)
+            section->onMoveUp = [this, pos] { moveEffectUp (pos); };
+        if (pos < ParameterMatrix::NumEffects - 1)
+            section->onMoveDown = [this, pos] { moveEffectDown (pos); };
+
+        addAndMakeVisible (section.get());
+        sections.push_back (std::move (section));
+    }
+    resized();
+    repaint();
+}
+
+void SequencerMatrixComponent::moveEffectUp (int posInOrder)
+{
+    if (posInOrder <= 0) return;
+    auto& seqState = processor.getSequencerState();
+    seqState.swapEffects (posInOrder, posInOrder - 1);
+    rebuildSections();
+}
+
+void SequencerMatrixComponent::moveEffectDown (int posInOrder)
+{
+    if (posInOrder >= ParameterMatrix::NumEffects - 1) return;
+    auto& seqState = processor.getSequencerState();
+    seqState.swapEffects (posInOrder, posInOrder + 1);
+    rebuildSections();
 }
 
 void SequencerMatrixComponent::timerCallback()

@@ -5,6 +5,7 @@
 #include "dsp/ReverbEngine.h"
 #include "dsp/DistortionEngine.h"
 #include "dsp/ChorusEngine.h"
+#include "dsp/SidechainCompressorEngine.h"
 #include "sequencer/SequencerEngine.h"
 #include "sequencer/SequencerState.h"
 
@@ -53,9 +54,13 @@ private:
     ReverbEngine reverbEngine;
     DistortionEngine distortionEngine;
     ChorusEngine chorusEngine;
+    SidechainCompressorEngine compressorEngine;
 
     SequencerState sequencerState;
     SequencerEngine sequencerEngine;
+
+    void processEffect (int effectIndex, juce::AudioBuffer<float>& buffer,
+                        const juce::AudioBuffer<float>& sidechainBuffer);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

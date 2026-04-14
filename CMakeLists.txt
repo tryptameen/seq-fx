@@ -37,6 +37,7 @@ target_sources(SeqFX
         src/dsp/ReverbEngine.cpp
         src/dsp/DistortionEngine.cpp
         src/dsp/ChorusEngine.cpp
+        src/dsp/SidechainCompressorEngine.cpp
         src/sequencer/SequencerState.cpp
         src/sequencer/SequencerEngine.cpp
         src/ui/SequencerMatrixComponent.cpp
