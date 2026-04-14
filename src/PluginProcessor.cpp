@@ -55,6 +55,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f),
         0.0f));
 
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        "inputGain", "Input Gain",
+        juce::NormalisableRange<float> (-48.0f, 12.0f, 0.1f),
+        0.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        "outputGain", "Output Gain",
+        juce::NormalisableRange<float> (-48.0f, 12.0f, 0.1f),
+        0.0f));
+
     return { params.begin(), params.end() };
 }
 
@@ -114,6 +124,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     juce::ScopedNoDenormals noDenormals;
 
     auto output = getBusBuffer (buffer, false, 0);
+
+    // Input gain
+    auto* inGainParam = apvts.getRawParameterValue ("inputGain");
+    if (inGainParam != nullptr)
+        output.applyGain (juce::Decibels::decibelsToGain (inGainParam->load()));
+
     auto sidechainBuffer = getBusBuffer (buffer, true, 1);
     bool hasSidechain = getBus (true, 1) != nullptr && getBus (true, 1)->isEnabled()
                         && sidechainBuffer.getNumChannels() > 0;
@@ -200,6 +216,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         processEffect (effect, output,
                        hasSidechain ? sidechainBuffer : output);
     }
+
+    // Output gain
+    auto* outGainParam = apvts.getRawParameterValue ("outputGain");
+    if (outGainParam != nullptr)
+        output.applyGain (juce::Decibels::decibelsToGain (outGainParam->load()));
 }
 
 void PluginProcessor::processEffect (int effectIndex, juce::AudioBuffer<float>& buffer,

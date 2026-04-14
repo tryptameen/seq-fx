@@ -22,12 +22,16 @@ private:
     juce::ComboBox stepsBox;
     juce::TextButton interpolationButton { "Hold" };
     juce::Slider swingSlider;
+    juce::Slider inputGainSlider;
+    juce::Slider outputGainSlider;
     juce::TextButton randomizeButton { "Randomize" };
     juce::TextButton clearButton { "Clear" };
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> barsAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> stepsAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> swingAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> inputGainAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputGainAttachment;
 
     void onInterpolationClicked();
     void onRandomizeClicked();

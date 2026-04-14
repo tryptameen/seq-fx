@@ -29,6 +29,20 @@ ToolbarComponent::ToolbarComponent (PluginProcessor& proc)
     swingAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         processor.getAPVTS(), "swing", swingSlider);
 
+    inputGainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    inputGainSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 50, 20);
+    inputGainSlider.setRange (-48.0, 12.0, 0.1);
+    addAndMakeVisible (inputGainSlider);
+    inputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        processor.getAPVTS(), "inputGain", inputGainSlider);
+
+    outputGainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    outputGainSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 50, 20);
+    outputGainSlider.setRange (-48.0, 12.0, 0.1);
+    addAndMakeVisible (outputGainSlider);
+    outputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        processor.getAPVTS(), "outputGain", outputGainSlider);
+
     randomizeButton.onClick = [this] { onRandomizeClicked(); };
     addAndMakeVisible (randomizeButton);
 
@@ -48,12 +62,14 @@ void ToolbarComponent::paint (juce::Graphics& g)
 void ToolbarComponent::resized()
 {
     auto area = getLocalBounds().reduced (8);
-    barsSlider.setBounds (area.removeFromLeft (160));
-    stepsBox.setBounds (area.removeFromLeft (110).reduced (4));
-    interpolationButton.setBounds (area.removeFromLeft (70).reduced (4));
-    swingSlider.setBounds (area.removeFromLeft (130));
-    clearButton.setBounds (area.removeFromRight (70).reduced (4));
-    randomizeButton.setBounds (area.removeFromRight (90).reduced (4));
+    barsSlider.setBounds (area.removeFromLeft (140));
+    stepsBox.setBounds (area.removeFromLeft (100).reduced (4));
+    interpolationButton.setBounds (area.removeFromLeft (65).reduced (4));
+    swingSlider.setBounds (area.removeFromLeft (120));
+    inputGainSlider.setBounds (area.removeFromLeft (120).reduced (4));
+    outputGainSlider.setBounds (area.removeFromLeft (120).reduced (4));
+    randomizeButton.setBounds (area.removeFromRight (85).reduced (4));
+    clearButton.setBounds (area.removeFromRight (65).reduced (4));
 }
 
 void ToolbarComponent::onInterpolationClicked()
