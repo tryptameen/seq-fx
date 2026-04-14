@@ -1,0 +1,29 @@
+# Build directories
+build/
+out/
+cmake-build-*/
+
+# IDE
+.idea/
+.vscode/
+*.user
+*.suo
+*.ncb
+*.sdf
+*.opensdf
+
+# OS
+.DS_Store
+Thumbs.db
+
+# JuceLibraryCode (generated)
+JuceLibraryCode/
+
+# Installers / packages
+*.dmg
+*.exe
+*.msi
+*.deb
+*.tar.gz
+*.zip
+installer/Output/

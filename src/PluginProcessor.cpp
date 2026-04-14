@@ -1,0 +1,237 @@
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
+
+PluginProcessor::PluginProcessor()
+    : AudioProcessor (BusesProperties()
+                      #if ! JucePlugin_IsMidiEffect
+                       #if ! JucePlugin_IsSynth
+                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                       #endif
+                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                      #endif
+                     ),
+      apvts (*this, nullptr, "Parameters", createParameterLayout())
+{
+    sequencerEngine.setState (&sequencerState);
+}
+
+PluginProcessor::~PluginProcessor() = default;
+
+juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
+{
+    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
+
+    for (int i = 0; i < ParameterMatrix::NumLanes; ++i)
+    {
+        const auto& info = ParameterMatrix::Lanes[static_cast<size_t> (i)];
+        if (info.isLogarithmic)
+        {
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                info.id, info.name,
+                juce::NormalisableRange<float> (info.minValue, info.maxValue, 0.01f, 0.5f),
+                info.defaultValue));
+        }
+        else
+        {
+            params.push_back (std::make_unique<juce::AudioParameterFloat> (
+                info.id, info.name,
+                juce::NormalisableRange<float> (info.minValue, info.maxValue),
+                info.defaultValue));
+        }
+    }
+
+    params.push_back (std::make_unique<juce::AudioParameterInt> (
+        "bars", "Bars", 1, 32, 1));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        "stepsPerBar", "Steps Per Bar", juce::StringArray ("4", "8", "16"), 2));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        "interpolation", "Interpolation", juce::StringArray ("Hold", "Glide"), 0));
+
+    return { params.begin(), params.end() };
+}
+
+void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+{
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = static_cast<juce::uint32> (samplesPerBlock);
+    spec.numChannels = static_cast<juce::uint32> (getTotalNumOutputChannels());
+
+    filterEngine.prepare (spec);
+    delayEngine.prepare (sampleRate, samplesPerBlock);
+    reverbEngine.prepare (spec);
+    sequencerEngine.prepare (sampleRate);
+
+    // Initialize grid from parameters
+    auto* barsParam = apvts.getRawParameterValue ("bars");
+    auto* spbParam = apvts.getRawParameterValue ("stepsPerBar");
+    if (barsParam != nullptr && spbParam != nullptr)
+    {
+        int bars = static_cast<int> (*barsParam);
+        int spb = 4 << static_cast<int> (*spbParam); // 0->4, 1->8, 2->16
+        sequencerState.setGrid (bars, spb);
+        for (int lane = 0; lane < ParameterMatrix::NumLanes; ++lane)
+            for (int s = 0; s < sequencerState.getTotalSteps(); ++s)
+                sequencerState.setStepValue (lane, s, 0.5f);
+    }
+}
+
+void PluginProcessor::releaseResources()
+{
+}
+
+bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+{
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
+     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+
+   #if ! JucePlugin_IsSynth
+    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
+        return false;
+   #endif
+
+    return true;
+}
+
+void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    juce::ScopedNoDenormals noDenormals;
+
+    // Update grid if parameters changed
+    auto* barsParam = apvts.getRawParameterValue ("bars");
+    auto* spbParam = apvts.getRawParameterValue ("stepsPerBar");
+    if (barsParam != nullptr && spbParam != nullptr)
+    {
+        int bars = static_cast<int> (*barsParam);
+        int spbIndex = static_cast<int> (*spbParam);
+        int spb = (spbIndex == 0) ? 4 : (spbIndex == 1) ? 8 : 16;
+        if (bars != sequencerState.getNumBars() || spb != sequencerState.getStepsPerBar())
+        {
+            int oldSteps = sequencerState.getTotalSteps();
+            sequencerState.setGrid (bars, spb);
+            // Fill new steps with 0.5f
+            for (int lane = 0; lane < ParameterMatrix::NumLanes; ++lane)
+                for (int s = oldSteps; s < sequencerState.getTotalSteps(); ++s)
+                    sequencerState.setStepValue (lane, s, 0.5f);
+        }
+    }
+
+    auto* interpParam = apvts.getRawParameterValue ("interpolation");
+    if (interpParam != nullptr)
+    {
+        sequencerEngine.setInterpolation (
+            *interpParam > 0.5f ? SequencerEngine::Interpolation::Glide
+                                : SequencerEngine::Interpolation::Hold);
+    }
+
+    // Sync playhead
+    if (auto* ph = getPlayHead())
+    {
+        auto pos = ph->getPosition();
+        if (pos.hasValue() && pos->getPpqPosition().hasValue())
+            sequencerEngine.setPlayheadPPQ (*pos->getPpqPosition());
+    }
+    else
+    {
+        sequencerEngine.setPlayheadPPQ (-1.0);
+    }
+
+    sequencerEngine.processBlock (buffer.getNumSamples());
+
+    // Update DSP parameters from sequencer
+    filterEngine.setCutoff (sequencerEngine.getSmoothedValue (ParameterMatrix::FilterCutoff));
+    filterEngine.setResonance (sequencerEngine.getSmoothedValue (ParameterMatrix::FilterResonance));
+    filterEngine.setMix (sequencerEngine.getSmoothedValue (ParameterMatrix::FilterMix));
+
+    delayEngine.setTimeMs (sequencerEngine.getSmoothedValue (ParameterMatrix::DelayTime));
+    delayEngine.setFeedback (sequencerEngine.getSmoothedValue (ParameterMatrix::DelayFeedback));
+    delayEngine.setMix (sequencerEngine.getSmoothedValue (ParameterMatrix::DelayMix));
+
+    reverbEngine.setSize (sequencerEngine.getSmoothedValue (ParameterMatrix::ReverbSize));
+    reverbEngine.setDamping (sequencerEngine.getSmoothedValue (ParameterMatrix::ReverbDamping));
+    reverbEngine.setMix (sequencerEngine.getSmoothedValue (ParameterMatrix::ReverbMix));
+
+    filterEngine.process (buffer);
+    delayEngine.process (buffer);
+    reverbEngine.process (buffer);
+}
+
+juce::AudioProcessorEditor* PluginProcessor::createEditor()
+{
+    return new PluginEditor (*this);
+}
+
+bool PluginProcessor::hasEditor() const { return true; }
+
+const juce::String PluginProcessor::getName() const { return JucePlugin_Name; }
+bool PluginProcessor::acceptsMidi() const
+{
+   #if JucePlugin_WantsMidiInput
+    return true;
+   #else
+    return false;
+   #endif
+}
+bool PluginProcessor::producesMidi() const
+{
+   #if JucePlugin_ProducesMidiOutput
+    return true;
+   #else
+    return false;
+   #endif
+}
+bool PluginProcessor::isMidiEffect() const
+{
+   #if JucePlugin_IsMidiEffect
+    return true;
+   #else
+    return false;
+   #endif
+}
+double PluginProcessor::getTailLengthSeconds() const { return 3.0; }
+int PluginProcessor::getNumPrograms() { return 1; }
+int PluginProcessor::getCurrentProgram() { return 0; }
+void PluginProcessor::setCurrentProgram (int) {}
+const juce::String PluginProcessor::getProgramName (int) { return {}; }
+void PluginProcessor::changeProgramName (int, const juce::String&) {}
+
+void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    auto stateTree = apvts.copyState();
+
+    juce::MemoryBlock seqBlock;
+    sequencerState.writeToMemoryBlock (seqBlock);
+    stateTree.setProperty ("sequencer_data", juce::Base64::toBase64 (seqBlock.getData(), seqBlock.getSize()), nullptr);
+
+    std::unique_ptr<juce::XmlElement> xml (stateTree.createXml());
+    copyXmlToBinary (*xml, destData);
+}
+
+void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    std::unique_ptr<juce::XmlElement> xml (getXmlFromBinary (data, sizeInBytes));
+    if (xml != nullptr)
+    {
+        if (xml->hasTagName (apvts.state.getType()))
+        {
+            apvts.replaceState (juce::ValueTree::fromXml (*xml));
+
+            auto seqData = apvts.state.getProperty ("sequencer_data").toString();
+            if (seqData.isNotEmpty())
+            {
+                juce::MemoryBlock seqBlock;
+                juce::MemoryOutputStream mos (seqBlock, false);
+                if (juce::Base64::convertFromBase64 (mos, seqData))
+                    sequencerState.readFromMemoryBlock (seqBlock);
+            }
+        }
+    }
+}
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new PluginProcessor();
+}

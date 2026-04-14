@@ -1,0 +1,112 @@
+name: Build SeqFX
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Linux
+  # ---------------------------------------------------------------------------
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libfreetype6-dev libfontconfig1-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libwebkit2gtk-4.0-dev libglu1-mesa-dev mesa-common-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j$(nproc)
+
+      - name: Package .deb & tarball
+        run: |
+          cd build
+          cpack -G DEB
+          cpack -G TGZ
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SeqFX-Linux
+          path: |
+            build/SeqFX_artefacts/Release/VST3/SeqFX.vst3
+            build/SeqFX_artefacts/Release/Standalone/SeqFX
+            build/*.deb
+            build/*.tar.gz
+
+  # ---------------------------------------------------------------------------
+  # Windows
+  # ---------------------------------------------------------------------------
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Build installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "${{ github.workspace }}\installer\windows.iss"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SeqFX-Windows
+          path: |
+            build/SeqFX_artefacts/Release/VST3/SeqFX.vst3
+            build/SeqFX_artefacts/Release/Standalone/SeqFX.exe
+            installer/Output/*.exe
+
+  # ---------------------------------------------------------------------------
+  # macOS
+  # ---------------------------------------------------------------------------
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -G Xcode
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Create DMG
+        run: |
+          mkdir -p /tmp/seqfx_dmg
+          cp -R build/SeqFX_artefacts/Release/VST3/SeqFX.vst3 /tmp/seqfx_dmg/
+          cp -R build/SeqFX_artefacts/Release/AU/SeqFX.component /tmp/seqfx_dmg/
+          cp -R build/SeqFX_artefacts/Release/Standalone/SeqFX.app /tmp/seqfx_dmg/
+          hdiutil create -volname "SeqFX Installer" -srcfolder /tmp/seqfx_dmg -ov -format UDZO SeqFX-macOS.dmg
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SeqFX-macOS
+          path: |
+            build/SeqFX_artefacts/Release/VST3/SeqFX.vst3
+            build/SeqFX_artefacts/Release/AU/SeqFX.component
+            build/SeqFX_artefacts/Release/Standalone/SeqFX.app
+            SeqFX-macOS.dmg
