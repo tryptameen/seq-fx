@@ -17,6 +17,11 @@ void SequencerEngine::setPlayheadPPQ (double ppq)
     lastPpq = ppq;
 }
 
+void SequencerEngine::setMidiStepIndex (int step)
+{
+    midiStepIndex = step;
+}
+
 void SequencerEngine::setSwing (float swing01)
 {
     swing = juce::jlimit (0.0f, 1.0f, swing01);
@@ -24,7 +29,13 @@ void SequencerEngine::setSwing (float swing01)
 
 double SequencerEngine::getCurrentStepFraction() const
 {
-    if (state == nullptr || state->getTotalSteps() <= 0 || lastPpq < 0.0)
+    if (state == nullptr || state->getTotalSteps() <= 0)
+        return -1.0;
+
+    if (syncMode == SyncMode::MidiNote)
+        return static_cast<double> (currentStep);
+
+    if (lastPpq < 0.0)
         return -1.0;
 
     const double stepsPerQuarterNote = state->getStepsPerBar() / 4.0;
@@ -62,33 +73,49 @@ void SequencerEngine::processBlock (int numSamples)
     }
 
     const int totalSteps = state->getTotalSteps();
-    if (totalSteps <= 0 || lastPpq < 0.0)
+    if (totalSteps <= 0)
     {
         updateSmoothing (numSamples);
         return;
     }
 
-    const double stepsPerQuarterNote = state->getStepsPerBar() / 4.0;
+    int stepIndex = currentStep;
 
-    double adjustedPpq = lastPpq;
-    if (swing > 0.0f)
+    if (syncMode == SyncMode::Host)
     {
-        double rawStep = lastPpq * stepsPerQuarterNote;
-        int stepIndex = static_cast<int> (std::floor (rawStep));
-        double frac = rawStep - stepIndex;
-        double stepDuration = 1.0 / stepsPerQuarterNote;
-
-        if (stepIndex % 2 != 0)
+        if (lastPpq < 0.0)
         {
-            double swingDelay = swing * 0.66 * stepDuration;
-            if (frac * stepDuration < swingDelay)
-                adjustedPpq -= swingDelay;
+            updateSmoothing (numSamples);
+            return;
         }
-    }
 
-    double currentStepF = adjustedPpq * stepsPerQuarterNote;
-    int stepIndex = static_cast<int> (std::floor (currentStepF)) % totalSteps;
-    if (stepIndex < 0) stepIndex += totalSteps;
+        const double stepsPerQuarterNote = state->getStepsPerBar() / 4.0;
+
+        double adjustedPpq = lastPpq;
+        if (swing > 0.0f)
+        {
+            double rawStep = lastPpq * stepsPerQuarterNote;
+            int sIdx = static_cast<int> (std::floor (rawStep));
+            double frac = rawStep - sIdx;
+            double stepDuration = 1.0 / stepsPerQuarterNote;
+
+            if (sIdx % 2 != 0)
+            {
+                double swingDelay = swing * 0.66 * stepDuration;
+                if (frac * stepDuration < swingDelay)
+                    adjustedPpq -= swingDelay;
+            }
+        }
+
+        double currentStepF = adjustedPpq * stepsPerQuarterNote;
+        stepIndex = static_cast<int> (std::floor (currentStepF)) % totalSteps;
+        if (stepIndex < 0) stepIndex += totalSteps;
+    }
+    else // MidiNote
+    {
+        stepIndex = midiStepIndex % totalSteps;
+        if (stepIndex < 0) stepIndex += totalSteps;
+    }
 
     if (stepIndex != currentStep)
     {
@@ -117,14 +144,15 @@ void SequencerEngine::updateTargets (int stepIndex)
 
 void SequencerEngine::updateSmoothing (int numSamples)
 {
-    const float coef = (interpolation == Interpolation::Glide) ? 0.005f : 0.05f;
+    float timeConstant = (interpolation == Interpolation::Glide) ? 0.100f : 0.005f;
+    float coef = 1.0f - std::exp (-1.0f / (timeConstant * static_cast<float> (sampleRate)));
 
     for (int lane = 0; lane < ParameterMatrix::NumLanes; ++lane)
     {
         float current = smoothedValues[lane];
         float target = targetValues[lane];
 
-        if (std::abs (target - current) < 0.001f)
+        if (std::abs (target - current) < 0.0001f)
         {
             smoothedValues[lane] = target;
             continue;

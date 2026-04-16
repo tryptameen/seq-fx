@@ -19,13 +19,16 @@ void SequencerState::setGrid (int bars, int stepsPerBar)
 
     for (auto& lane : lanes)
     {
+        size_t oldSize = lane.size();
         lane.resize (static_cast<size_t> (totalSteps));
-        for (auto& v : lane)
-            v = 0.0f;
+        if (lane.size() > oldSize)
+            std::fill (lane.begin() + static_cast<std::ptrdiff_t> (oldSize), lane.end(), 0.0f);
     }
+
+    size_t oldGateSize = gateValues.size();
     gateValues.resize (static_cast<size_t> (totalSteps));
-    for (auto& v : gateValues)
-        v = 1.0f;
+    if (gateValues.size() > oldGateSize)
+        std::fill (gateValues.begin() + static_cast<std::ptrdiff_t> (oldGateSize), gateValues.end(), 1.0f);
 }
 
 float SequencerState::getStepValue (int lane, int step) const noexcept
@@ -130,6 +133,8 @@ void SequencerState::writeToMemoryBlock (juce::MemoryBlock& mb) const
         stream.writeByte (b ? 1 : 0);
     for (bool s : solo)
         stream.writeByte (s ? 1 : 0);
+
+    stream.writeInt (snapMode);
 }
 
 void SequencerState::readFromMemoryBlock (const juce::MemoryBlock& mb)
@@ -166,4 +171,7 @@ void SequencerState::readFromMemoryBlock (const juce::MemoryBlock& mb)
     for (bool& s : solo)
         if (stream.getNumBytesRemaining() > 0)
             s = stream.readByte() != 0;
+
+    if (stream.getNumBytesRemaining() >= static_cast<juce::int64> (sizeof (int)))
+        snapMode = stream.readInt();
 }

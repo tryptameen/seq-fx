@@ -37,6 +37,9 @@ public:
 
     bool anySoloActive() const noexcept;
 
+    int getSnapMode() const noexcept { return snapMode; }
+    void setSnapMode (int mode) { snapMode = juce::jlimit (0, 2, mode); }
+
     void writeToMemoryBlock (juce::MemoryBlock& mb) const;
     void readFromMemoryBlock (const juce::MemoryBlock& mb);
 
@@ -44,6 +47,7 @@ private:
     int numBars { 1 };
     int stepsPerBar { 16 };
     int totalSteps { 16 };
+    int snapMode { 0 };
     std::array<std::vector<float>, ParameterMatrix::NumLanes> lanes;
     std::vector<float> gateValues;
 

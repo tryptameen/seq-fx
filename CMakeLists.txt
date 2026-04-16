@@ -40,6 +40,7 @@ target_sources(SeqFX
         src/dsp/SidechainCompressorEngine.cpp
         src/sequencer/SequencerState.cpp
         src/sequencer/SequencerEngine.cpp
+        src/presets/PresetManager.cpp
         src/ui/SequencerMatrixComponent.cpp
         src/ui/EffectSection.cpp
         src/ui/LaneComponent.cpp

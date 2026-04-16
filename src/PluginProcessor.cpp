@@ -65,6 +65,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::NormalisableRange<float> (-48.0f, 12.0f, 0.1f),
         0.0f));
 
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        "dryWet", "Dry / Wet",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f),
+        1.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        "syncMode", "Sync Mode", juce::StringArray ("Host", "MIDI Note"), 0));
+
     return { params.begin(), params.end() };
 }
 
@@ -90,9 +98,6 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
         int bars = static_cast<int> (*barsParam);
         int spb = 4 << static_cast<int> (*spbParam);
         sequencerState.setGrid (bars, spb);
-        for (int lane = 0; lane < ParameterMatrix::NumLanes; ++lane)
-            for (int s = 0; s < sequencerState.getTotalSteps(); ++s)
-                sequencerState.setStepValue (lane, s, 0.0f);
     }
 }
 
@@ -119,7 +124,7 @@ bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
     return (sidechainIn == juce::AudioChannelSet::mono() || sidechainIn == juce::AudioChannelSet::stereo());
 }
 
-void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
 
@@ -134,6 +139,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     bool hasSidechain = getBus (true, 1) != nullptr && getBus (true, 1)->isEnabled()
                         && sidechainBuffer.getNumChannels() > 0;
 
+    juce::AudioBuffer<float> dryBuffer;
+    dryBuffer.makeCopyOf (output);
+
     auto* barsParam = apvts.getRawParameterValue ("bars");
     auto* spbParam = apvts.getRawParameterValue ("stepsPerBar");
     if (barsParam != nullptr && spbParam != nullptr)
@@ -142,13 +150,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         int spbIndex = static_cast<int> (*spbParam);
         int spb = (spbIndex == 0) ? 4 : (spbIndex == 1) ? 8 : 16;
         if (bars != sequencerState.getNumBars() || spb != sequencerState.getStepsPerBar())
-        {
-            int oldSteps = sequencerState.getTotalSteps();
             sequencerState.setGrid (bars, spb);
-            for (int lane = 0; lane < ParameterMatrix::NumLanes; ++lane)
-                for (int s = oldSteps; s < sequencerState.getTotalSteps(); ++s)
-                    sequencerState.setStepValue (lane, s, 0.0f);
-        }
     }
 
     auto* interpParam = apvts.getRawParameterValue ("interpolation");
@@ -165,15 +167,33 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         sequencerEngine.setSwing (*swingParam);
     }
 
-    if (auto* ph = getPlayHead())
+    auto* syncParam = apvts.getRawParameterValue ("syncMode");
+    bool midiSync = (syncParam != nullptr && *syncParam > 0.5f);
+    sequencerEngine.setSyncMode (midiSync ? SequencerEngine::SyncMode::MidiNote
+                                           : SequencerEngine::SyncMode::Host);
+
+    if (midiSync)
     {
-        auto pos = ph->getPosition();
-        if (pos.hasValue() && pos->getPpqPosition().hasValue())
-            sequencerEngine.setPlayheadPPQ (*pos->getPpqPosition());
+        for (const auto meta : midiMessages)
+        {
+            auto msg = meta.getMessage();
+            if (msg.isNoteOn())
+                ++midiStepCounter;
+        }
+        sequencerEngine.setMidiStepIndex (midiStepCounter);
     }
     else
     {
-        sequencerEngine.setPlayheadPPQ (-1.0);
+        if (auto* ph = getPlayHead())
+        {
+            auto pos = ph->getPosition();
+            if (pos.hasValue() && pos->getPpqPosition().hasValue())
+                sequencerEngine.setPlayheadPPQ (*pos->getPpqPosition());
+        }
+        else
+        {
+            sequencerEngine.setPlayheadPPQ (-1.0);
+        }
     }
 
     sequencerEngine.processBlock (output.getNumSamples());
@@ -221,6 +241,21 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     auto* outGainParam = apvts.getRawParameterValue ("outputGain");
     if (outGainParam != nullptr)
         output.applyGain (juce::Decibels::decibelsToGain (outGainParam->load()));
+
+    // Dry/Wet
+    auto* dryWetParam = apvts.getRawParameterValue ("dryWet");
+    if (dryWetParam != nullptr)
+    {
+        float wet = dryWetParam->load();
+        float dryAmt = 1.0f - wet;
+        for (int ch = 0; ch < output.getNumChannels(); ++ch)
+        {
+            auto* out = output.getWritePointer (ch);
+            auto* dryPtr = dryBuffer.getReadPointer (ch);
+            for (int s = 0; s < output.getNumSamples(); ++s)
+                out[s] = dryPtr[s] * dryAmt + out[s] * wet;
+        }
+    }
 }
 
 void PluginProcessor::processEffect (int effectIndex, juce::AudioBuffer<float>& buffer,

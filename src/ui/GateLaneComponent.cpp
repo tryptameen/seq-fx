@@ -1,7 +1,14 @@
 #include "GateLaneComponent.h"
+#include "sequencer/SequencerUndoableActions.h"
+#include <cmath>
 
-GateLaneComponent::GateLaneComponent (SequencerState& state)
-    : seqState (state)
+namespace
+{
+    std::vector<float> gateClipboard;
+}
+
+GateLaneComponent::GateLaneComponent (SequencerState& state, juce::UndoManager& um)
+    : seqState (state), undoManager (um)
 {
 }
 
@@ -43,7 +50,64 @@ void GateLaneComponent::paint (juce::Graphics& g)
 
 void GateLaneComponent::mouseDown (const juce::MouseEvent& e)
 {
+    if (e.mods.isPopupMenu())
+    {
+        showContextMenu();
+        return;
+    }
+    dragSnapshot.clear();
+    for (int s = 0; s < seqState.getTotalSteps(); ++s)
+        dragSnapshot.push_back (seqState.getGateValue (s));
     mouseDrag (e);
+}
+
+void GateLaneComponent::mouseUp (const juce::MouseEvent&)
+{
+    if (dragSnapshot.empty())
+        return;
+
+    std::vector<float> newValues;
+    for (int s = 0; s < seqState.getTotalSteps(); ++s)
+        newValues.push_back (seqState.getGateValue (s));
+
+    bool changed = false;
+    for (size_t i = 0; i < dragSnapshot.size(); ++i)
+        if (! juce::approximatelyEqual (dragSnapshot[i], newValues[i]))
+        {
+            changed = true;
+            break;
+        }
+
+    if (changed)
+    {
+        undoManager.beginNewTransaction ("Edit gate");
+        undoManager.perform (new SetGateValuesAction (seqState, dragSnapshot, newValues));
+    }
+
+    dragSnapshot.clear();
+}
+
+void GateLaneComponent::showContextMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem ("Copy Gate", [this]
+    {
+        gateClipboard.clear();
+        for (int s = 0; s < seqState.getTotalSteps(); ++s)
+            gateClipboard.push_back (seqState.getGateValue (s));
+    });
+
+    menu.addItem ("Paste Gate", [this]
+    {
+        if (gateClipboard.empty())
+            return;
+        int steps = juce::jmin (seqState.getTotalSteps(), static_cast<int> (gateClipboard.size()));
+        for (int s = 0; s < steps; ++s)
+            seqState.setGateValue (s, gateClipboard[static_cast<size_t> (s)]);
+        repaint();
+    });
+
+    menu.showMenuAsync (juce::PopupMenu::Options());
 }
 
 void GateLaneComponent::mouseDrag (const juce::MouseEvent& e)
@@ -68,5 +132,12 @@ int GateLaneComponent::xToStep (int x) const
 float GateLaneComponent::yToValue (int y) const
 {
     float norm = 1.0f - (static_cast<float> (y) / getHeight());
-    return juce::jlimit (0.0f, 1.0f, norm);
+    float val = juce::jlimit (0.0f, 1.0f, norm);
+    int mode = seqState.getSnapMode();
+    if (mode > 0)
+    {
+        float step = (mode == 1) ? 0.5f : 0.25f;
+        val = juce::jlimit (0.0f, 1.0f, std::round (val / step) * step);
+    }
+    return val;
 }

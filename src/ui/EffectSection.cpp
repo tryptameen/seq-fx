@@ -2,8 +2,8 @@
 #include "LaneComponent.h"
 #include "PluginProcessor.h"
 
-EffectSection::EffectSection (int fxIndex, PluginProcessor& proc)
-    : effectIndex (fxIndex), processor (proc)
+EffectSection::EffectSection (int fxIndex, PluginProcessor& proc, juce::UndoManager& um)
+    : effectIndex (fxIndex), processor (proc), undoManager (um)
 {
     toggleButton.onClick = [this] { onToggleClicked(); };
     addAndMakeVisible (toggleButton);
@@ -20,11 +20,17 @@ EffectSection::EffectSection (int fxIndex, PluginProcessor& proc)
     soloButton.onClick = [this] { onSoloClicked(); };
     addAndMakeVisible (soloButton);
 
+    randButton.onClick = [this] { onRandClicked(); };
+    addAndMakeVisible (randButton);
+
+    clearButton.onClick = [this] { onClearClicked(); };
+    addAndMakeVisible (clearButton);
+
     auto& seqState = proc.getSequencerState();
     for (int lane = 0; lane < ParameterMatrix::LanesPerEffect; ++lane)
     {
         int laneIndex = effectIndex * ParameterMatrix::LanesPerEffect + lane;
-        auto l = std::make_unique<LaneComponent> (laneIndex, seqState);
+        auto l = std::make_unique<LaneComponent> (laneIndex, seqState, undoManager);
         addAndMakeVisible (l.get());
         lanes.push_back (std::move (l));
     }
@@ -77,6 +83,8 @@ void EffectSection::resized()
     downButton.setBounds (header.removeFromLeft (24).reduced (2));
     soloButton.setBounds (header.removeFromRight (28).reduced (2));
     bypassButton.setBounds (header.removeFromRight (28).reduced (2));
+    clearButton.setBounds (header.removeFromRight (28).reduced (2));
+    randButton.setBounds (header.removeFromRight (28).reduced (2));
 
     if (! expanded || lanes.empty())
         return;
@@ -127,6 +135,28 @@ void EffectSection::onSoloClicked()
     auto& seqState = processor.getSequencerState();
     seqState.setSoloed (effectIndex, ! seqState.isSoloed (effectIndex));
     updateButtonStates();
+    repaint();
+}
+
+void EffectSection::onRandClicked()
+{
+    juce::Random rng;
+    auto& seqState = processor.getSequencerState();
+    int baseLane = effectIndex * ParameterMatrix::LanesPerEffect;
+    for (int lane = 0; lane < ParameterMatrix::LanesPerEffect; ++lane)
+        for (int s = 0; s < seqState.getTotalSteps(); ++s)
+            seqState.setStepValue (baseLane + lane, s, rng.nextFloat());
+    refreshLanes();
+    repaint();
+}
+
+void EffectSection::onClearClicked()
+{
+    auto& seqState = processor.getSequencerState();
+    int baseLane = effectIndex * ParameterMatrix::LanesPerEffect;
+    for (int lane = 0; lane < ParameterMatrix::LanesPerEffect; ++lane)
+        seqState.clearLane (baseLane + lane);
+    refreshLanes();
     repaint();
 }
 

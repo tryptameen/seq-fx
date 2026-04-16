@@ -5,17 +5,21 @@
 class LaneComponent  : public juce::Component
 {
 public:
-    LaneComponent (int laneIndex, SequencerState& state);
+    LaneComponent (int laneIndex, SequencerState& state, juce::UndoManager& um);
 
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseUp (const juce::MouseEvent& e) override;
 
     void refresh() { repaint(); }
+    void showContextMenu();
 
 private:
     int lane;
     SequencerState& seqState;
+    juce::UndoManager& undoManager;
+    std::vector<float> dragSnapshot;
 
     int xToStep (int x) const;
     float yToValue (int y) const;

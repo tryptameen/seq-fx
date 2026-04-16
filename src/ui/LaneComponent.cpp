@@ -1,8 +1,15 @@
 #include "LaneComponent.h"
 #include "sequencer/ParameterMatrix.h"
+#include "sequencer/SequencerUndoableActions.h"
+#include <cmath>
 
-LaneComponent::LaneComponent (int laneIndex, SequencerState& state)
-    : lane (laneIndex), seqState (state)
+namespace
+{
+    std::vector<float> laneClipboard;
+}
+
+LaneComponent::LaneComponent (int laneIndex, SequencerState& state, juce::UndoManager& um)
+    : lane (laneIndex), seqState (state), undoManager (um)
 {
 }
 
@@ -47,7 +54,64 @@ void LaneComponent::paint (juce::Graphics& g)
 
 void LaneComponent::mouseDown (const juce::MouseEvent& e)
 {
+    if (e.mods.isPopupMenu())
+    {
+        showContextMenu();
+        return;
+    }
+    dragSnapshot.clear();
+    for (int s = 0; s < seqState.getTotalSteps(); ++s)
+        dragSnapshot.push_back (seqState.getStepValue (lane, s));
     mouseDrag (e);
+}
+
+void LaneComponent::mouseUp (const juce::MouseEvent&)
+{
+    if (dragSnapshot.empty())
+        return;
+
+    std::vector<float> newValues;
+    for (int s = 0; s < seqState.getTotalSteps(); ++s)
+        newValues.push_back (seqState.getStepValue (lane, s));
+
+    bool changed = false;
+    for (size_t i = 0; i < dragSnapshot.size(); ++i)
+        if (! juce::approximatelyEqual (dragSnapshot[i], newValues[i]))
+        {
+            changed = true;
+            break;
+        }
+
+    if (changed)
+    {
+        undoManager.beginNewTransaction ("Edit lane");
+        undoManager.perform (new SetLaneValuesAction (seqState, lane, dragSnapshot, newValues));
+    }
+
+    dragSnapshot.clear();
+}
+
+void LaneComponent::showContextMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem ("Copy Lane", [this]
+    {
+        laneClipboard.clear();
+        for (int s = 0; s < seqState.getTotalSteps(); ++s)
+            laneClipboard.push_back (seqState.getStepValue (lane, s));
+    });
+
+    menu.addItem ("Paste Lane", [this]
+    {
+        if (laneClipboard.empty())
+            return;
+        int steps = juce::jmin (seqState.getTotalSteps(), static_cast<int> (laneClipboard.size()));
+        for (int s = 0; s < steps; ++s)
+            seqState.setStepValue (lane, s, laneClipboard[static_cast<size_t> (s)]);
+        repaint();
+    });
+
+    menu.showMenuAsync (juce::PopupMenu::Options());
 }
 
 void LaneComponent::mouseDrag (const juce::MouseEvent& e)
@@ -72,5 +136,12 @@ int LaneComponent::xToStep (int x) const
 float LaneComponent::yToValue (int y) const
 {
     float norm = 1.0f - (static_cast<float> (y) / getHeight());
-    return juce::jlimit (0.0f, 1.0f, norm);
+    float val = juce::jlimit (0.0f, 1.0f, norm);
+    int mode = seqState.getSnapMode();
+    if (mode > 0)
+    {
+        float step = (mode == 1) ? 0.5f : 0.25f;
+        val = juce::jlimit (0.0f, 1.0f, std::round (val / step) * step);
+    }
+    return val;
 }

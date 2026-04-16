@@ -1,5 +1,8 @@
 #include "ToolbarComponent.h"
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
+#include "ui/SequencerMatrixComponent.h"
+#include "presets/PresetManager.h"
 
 ToolbarComponent::ToolbarComponent (PluginProcessor& proc)
     : processor (proc), seqState (proc.getSequencerState())
@@ -17,6 +20,22 @@ ToolbarComponent::ToolbarComponent (PluginProcessor& proc)
     addAndMakeVisible (stepsBox);
     stepsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         processor.getAPVTS(), "stepsPerBar", stepsBox);
+
+    snapBox.addItem ("Snap: Off", 1);
+    snapBox.addItem ("Snap: 1/2", 2);
+    snapBox.addItem ("Snap: 1/4", 3);
+    snapBox.setSelectedItemIndex (seqState.getSnapMode(), juce::dontSendNotification);
+    snapBox.onChange = [this]
+    {
+        seqState.setSnapMode (snapBox.getSelectedItemIndex());
+    };
+    addAndMakeVisible (snapBox);
+
+    syncBox.addItem ("Host", 1);
+    syncBox.addItem ("MIDI", 2);
+    addAndMakeVisible (syncBox);
+    syncAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        processor.getAPVTS(), "syncMode", syncBox);
 
     interpolationButton.onClick = [this] { onInterpolationClicked(); };
     addAndMakeVisible (interpolationButton);
@@ -43,6 +62,20 @@ ToolbarComponent::ToolbarComponent (PluginProcessor& proc)
     outputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         processor.getAPVTS(), "outputGain", outputGainSlider);
 
+    dryWetSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    dryWetSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 40, 20);
+    dryWetSlider.setRange (0.0, 1.0, 0.01);
+    addAndMakeVisible (dryWetSlider);
+    dryWetAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        processor.getAPVTS(), "dryWet", dryWetSlider);
+
+    presetBox.addItem ("Preset...", 1);
+    for (int i = 0; i < PresetManager::getNumPresets(); ++i)
+        presetBox.addItem (PresetManager::getPresetName (i), i + 2);
+    presetBox.setSelectedItemIndex (0, juce::dontSendNotification);
+    presetBox.onChange = [this] { onPresetSelected(); };
+    addAndMakeVisible (presetBox);
+
     randomizeButton.onClick = [this] { onRandomizeClicked(); };
     addAndMakeVisible (randomizeButton);
 
@@ -62,14 +95,18 @@ void ToolbarComponent::paint (juce::Graphics& g)
 void ToolbarComponent::resized()
 {
     auto area = getLocalBounds().reduced (8);
-    barsSlider.setBounds (area.removeFromLeft (140));
-    stepsBox.setBounds (area.removeFromLeft (100).reduced (4));
-    interpolationButton.setBounds (area.removeFromLeft (65).reduced (4));
-    swingSlider.setBounds (area.removeFromLeft (120));
-    inputGainSlider.setBounds (area.removeFromLeft (120).reduced (4));
-    outputGainSlider.setBounds (area.removeFromLeft (120).reduced (4));
-    randomizeButton.setBounds (area.removeFromRight (85).reduced (4));
-    clearButton.setBounds (area.removeFromRight (65).reduced (4));
+    barsSlider.setBounds (area.removeFromLeft (110));
+    stepsBox.setBounds (area.removeFromLeft (80).reduced (4));
+    snapBox.setBounds (area.removeFromLeft (80).reduced (4));
+    syncBox.setBounds (area.removeFromLeft (70).reduced (4));
+    interpolationButton.setBounds (area.removeFromLeft (55).reduced (4));
+    swingSlider.setBounds (area.removeFromLeft (90));
+    inputGainSlider.setBounds (area.removeFromLeft (90).reduced (4));
+    outputGainSlider.setBounds (area.removeFromLeft (90).reduced (4));
+    dryWetSlider.setBounds (area.removeFromLeft (75).reduced (4));
+    presetBox.setBounds (area.removeFromRight (90).reduced (4));
+    randomizeButton.setBounds (area.removeFromRight (65).reduced (4));
+    clearButton.setBounds (area.removeFromRight (50).reduced (4));
 }
 
 void ToolbarComponent::onInterpolationClicked()
@@ -89,6 +126,19 @@ void ToolbarComponent::updateInterpolationButton()
     interpolationButton.setButtonText (isGlide ? "Glide" : "Hold");
 }
 
+void ToolbarComponent::onPresetSelected()
+{
+    int idx = presetBox.getSelectedItemIndex() - 1; // "Preset..." is index 0
+    if (idx < 0)
+        return;
+
+    PresetManager::applyPreset (idx, processor);
+
+    if (auto* editor = findParentComponentOfClass<PluginEditor>())
+        if (auto* matrix = editor->getMatrix())
+            matrix->refreshAll();
+}
+
 void ToolbarComponent::onRandomizeClicked()
 {
     juce::Random rng;
@@ -97,11 +147,15 @@ void ToolbarComponent::onRandomizeClicked()
             seqState.setStepValue (lane, s, rng.nextFloat());
     for (int s = 0; s < seqState.getTotalSteps(); ++s)
         seqState.setGateValue (s, rng.nextFloat());
-    repaint();
+    if (auto* editor = findParentComponentOfClass<PluginEditor>())
+        if (auto* matrix = editor->getMatrix())
+            matrix->refreshAll();
 }
 
 void ToolbarComponent::onClearClicked()
 {
     seqState.clearAll();
-    repaint();
+    if (auto* editor = findParentComponentOfClass<PluginEditor>())
+        if (auto* matrix = editor->getMatrix())
+            matrix->refreshAll();
 }

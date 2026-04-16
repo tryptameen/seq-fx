@@ -21,6 +21,7 @@ public:
     void releaseResources() override;
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    using juce::AudioProcessor::processBlock;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override;
@@ -58,6 +59,7 @@ private:
 
     SequencerState sequencerState;
     SequencerEngine sequencerEngine;
+    int midiStepCounter { 0 };
 
     void processEffect (int effectIndex, juce::AudioBuffer<float>& buffer,
                         const juce::AudioBuffer<float>& sidechainBuffer);
